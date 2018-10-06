@@ -45,10 +45,11 @@ async def on_ready():
 def initSchedulers():
     # seconds can be replaced with minutes, hours, or days
     # Check for user updates every 1 hour
-    sched.add_job(updateUsers, 'interval', seconds=15)
+    sched.add_job(updateUsers, 'interval', hours=1)
     # TODO: Check for active quests updates every 1 hour
-
     sched.start()
+
+# NOTE: This functions shoul stay in here even if it;s not a bot comand because it's heavyli dependent on discord.py   
 def updateUsers():
     """
     Update the discord server for new users, new nicknames, new names and new admins
@@ -62,7 +63,8 @@ def updateUsers():
         if member.bot == True:
             continue
         
-        user = s.query(User).filter(User.discord_id == member.id).first()
+        user = User.getByDiscordID(s, member.id)
+        #user = s.query(User).filter(User.discord_id == member.id).first()
         # If the user doesn't exist we add it to the database
         if user == None:
             print("Added discord user %s to the database" % (member.name))
@@ -90,27 +92,14 @@ def updateUsers():
 
 
 #<Role id=495959309608419343 name='QuesterADMIN'>
-def isUserAdmin(ctx):
-    for role in ctx.author.roles:
-        if role.name == 'QuesterADMIN':
-            return True
-    return False
 
-
-def giveReward(quest_id, user_id, force):
-    s = session()
-    quest = s.query(Quest).filter(Quest.id == quest_id).first()
-    if force == False:
-        # This means if the quest is not active,
-        # because the ORM returns an empty list
-        if quest.quest_acitve == []:
-            return "COULD NOT GIVE REWARD FOR QUEST ID: %s, QUEST IS NOT ACTIVE" % (quest_id)
 
 @bot.command()
-async def premiaza(ctx, quest_id: int, user: str, force= ''):
-    #print (ctx.author.id)
+async def premiaza(ctx, quest_id: int, force= ''):
     s = session()
-    if isUserAdmin(ctx) == False:
+    # Get the author of the message and check if he is an admin in the database
+    msgUser = User.getByDiscordID(s, ctx.author.id)
+    if msgUser.is_admin == False:
         await ctx.send("Misto incercare bosule, dar nu esti tu bossul %s" %(ctx.author.name))
         return
 
@@ -120,13 +109,32 @@ async def premiaza(ctx, quest_id: int, user: str, force= ''):
     elif force == '-f':
             force = True
 
-
+    # Reward all the mentioned users with the quest
     mentions = ctx.message.mentions
     for mention in mentions:
-        user = s.query(User).filter(User.discord_id == mention.id).first()
-        # TODO: Make givereward function
-        await ctx.send(giveReward(quest_id, user.id, force))
+        user = User.getByDiscordID(s, mention.id)
+        user.giveReward(s, quest_id, force)
 
+        # Let users know that they were rewarded
+        quest = Quest.getByID(s, quest_id)
+        
+        string = ('Pentru completarea questului \'%s\' cu succes <@%s> a fost premiat cu:' % (quest.name, user.discord_id)
+         +'\nxp: %s' % (quest.xp)
+         +'\nsect coins: %s'% (quest.sect_coins)
+        )
+        stringStartRanks = '' 
+        stringEndRanks = ''            
+        
+        if quest.ranks.__len__() < 1:
+            stringStartRanks = '\nrankul: '
+        else:
+            stringStartRanks = '\nrankurile: '
+
+        for rank in quest.ranks:
+            stringEndRanks = stringEndRanks + rank.name + ', ' 
+        string = string + stringStartRanks + stringEndRanks[:stringEndRanks.__len__() - 2]
+        print(string)
+        await ctx.send(string)
 
 @bot.command()
 async def m_info(ctx):
@@ -201,4 +209,4 @@ async def misiune(ctx):
             row[quests.c.rarity], row[quests.c.xp], row[quests.c.sect_coins]))
 
 
-bot.run('NDg2ODAyNzQ5NTE0NzExMDUx.DnEbZA.ny7LqqXnkjR6qq1E1j3qsuxi_7k')
+bot.run('NDg2NjUyODUzNDIzOTY0MTYx.DpoMrA.C18vdsrAlunMWFE9H5QPeptpbP4')

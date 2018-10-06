@@ -27,9 +27,51 @@ class User(Base):
     sect_coins = Column(Integer, default = 0)
     
     #BACKREFS
-    user_phone_numbers = relationship('UserPhoneNumber', backref = 'user')
-    user_quests = relationship('UserQuest', backref = 'user')
-    user_ranks = relationship('UserRank', backref = 'user')
+    phone_numbers = relationship('UserPhoneNumber', backref = 'user')
+    quests = relationship('UserQuest', backref = 'user')
+    ranks = relationship('UserRank', backref = 'user')
+
+    def giveReward(self, session, quest_id, force = False):
+        """
+        Quest gets rewarded to the user. The quest must 
+        be active or force to be true for that to be possible.
+        """
+        quest = Quest.getByID(session, quest_id)
+        if force == False:
+            # This means if the quest is not active,
+            # because the ORM returns an empty list
+            if quest.quest_acitve == []:
+                return "COULD NOT GIVE REWARD FOR QUEST ID: %s, QUEST IS NOT ACTIVE" % (quest_id)
+
+        
+        self.xp = self.xp + quest.xp
+        self.sect_coins = self.sect_coins + quest.sect_coins
+
+        # Give user the ranks
+        for questRank in quest.ranks:
+            userRank = UserRank(rank_id = questRank.id, user_id = self.id)
+            session.add(userRank)
+
+        # Add the quest to completed database
+        userQuest = UserQuest(quest_id = quest.id, user_id = self.id)
+        session.add(userQuest)
+        session.commit()
+
+
+    @staticmethod
+    def getByID(session, id):
+        """
+        Returnns an ORM (object) where the User.id is matched
+        """
+        return session.query(User).filter(User.id == id).first()
+    
+    @staticmethod
+    def getByDiscordID(session, discord_id):
+        """
+        Returnns an ORM (object) where the User.discord_id is matched
+        """
+        return session.query(User).filter(User.discord_id == discord_id).first()
+
 
 
 # Used for whatsapp (No implementation yet)
@@ -56,22 +98,22 @@ class Quest(Base):
         LEGENDAR = 25
         IMPOSIBIL = 5
 
-        
+        @staticmethod
         def getRandomRarity():
             """
                 Returns a string with a random rarity based on the drop rate (%) 
             """
             r = random.randint(1,100)
-            if r <= IMPOSIBIL:
+            if r <= Rarities.IMPOSIBIL:
                 return "IMPOSIBIL"
-            elif r <= LEGENDAR:
+            elif r <= Rarities.LEGENDAR:
                 return "LEGENDAR"
-            elif r <= EPIC:
+            elif r <= Rarities.EPIC:
                 return "EPIC"
             else:
                 return "COMUN"
 
-    __tablename__ = 'Quest'
+    __tablename__ = 'quest'
     id = Column(Integer, primary_key=True)
     is_active = Column(Boolean, default = False)
     type = Column(String, nullable = False)
@@ -84,8 +126,18 @@ class Quest(Base):
 
 
     # BACKREFS
-    quest_active = relationship('QuestActive', backref = 'quest')
-    quest_ranks = relationship('QuestRank', backref = 'quest')
+    active = relationship('QuestActive', backref = 'quest')
+    ranks = relationship('QuestRank', backref = 'quest')
+
+    # FUNCTIONS
+    @staticmethod
+    def getByID(session, quest_id):
+        """
+        Returns an ORM where the Quest.id is matched
+        """
+        return session.query(Quest).filter(Quest.id == quest_id).first()
+
+    
 
 
 class QuestActive(Base):
@@ -102,11 +154,11 @@ class QuestActive(Base):
 
     def get(session):
         """
-         Returns an ORM (object) with all the active quests, 
+         Returns an ORM list (lsit objects) with all the active_q quests, 
          acces to the quest itself is made by using backrefs:
-         active.quest.name/id/type/rarity
-         similarly, acces to quest_ranks is done like:
-         active.quest.quest_ranks[0].rank
+         active_q.quest.name/id/type/rarity
+         similarly, acces to ranks is done like:
+         active.quest.ranks[0].rank
         """
         activeQuests = session.query(QuestActive)
         return activeQuests
@@ -124,7 +176,7 @@ class QuestRank(Base):
     __tablename__ = 'quest_rank'
     id = Column(Integer, primary_key=True)
     quest_id = Column(None, ForeignKey(Quest.id))
-    rank = Column(String, nullable = False)
+    name = Column(String, nullable = False)
 
 class UserRank(Base):
     __tablename__ = 'user_rank'
@@ -132,10 +184,11 @@ class UserRank(Base):
     user_id = Column(None, ForeignKey(User.id))
     rank_id = Column(None, ForeignKey(QuestRank.id))
 
-
+    quest_rank = relationship('QuestRank', backref = 'user_rank')
 
  
 # Create all the tables in the database
 Base.metadata.create_all(engine)
+print("Created all tables succesfully")
 
 

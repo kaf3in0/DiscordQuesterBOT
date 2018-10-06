@@ -35,7 +35,7 @@ def getActiveQuests():
         )
     
         string_ranks = '\nranks: '
-        for rank in aq.quest.quest_ranks:
+        for rank in aq.quest.ranks:
             string_ranks = string_ranks + rank.rank + ', '
         # Just print the string
         # Don't print the last ','

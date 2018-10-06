@@ -1,0 +1,5 @@
+import db
+s = db.session()
+user = db.User.getByID(s, 1)
+user.giveReward(s, 1, force = True)
+
