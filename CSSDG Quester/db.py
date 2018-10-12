@@ -11,6 +11,35 @@ engine = create_engine('sqlite:///DB/data.db')
  
 # Construct a sessionmaker object, use this object to make sessions across the aplication
 session = sessionmaker(bind = engine)
+
+class Types:
+    BETIV = 'BETIV'
+    NORMAL = 'NORMAL'
+    DUBIOS = 'DUBIOS'
+    PARIOR = 'PARIOR'
+
+
+class Rarities:
+    # % CONSTATNS
+    COMUN = 100
+    EPIC = 60
+    LEGENDAR = 25
+    IMPOSIBIL = 5
+
+    def getRandomRarity():
+        """
+        Returns a string with a random rarity based on the drop rate (%) 
+        """
+        r = random.randint(1,100)
+        if r <= Rarities.IMPOSIBIL:
+            return "IMPOSIBIL"
+        elif r <= Rarities.LEGENDAR:
+            return "LEGENDAR"
+        elif r <= Rarities.EPIC:
+            return "EPIC"
+        else:
+            return "COMUN"
+
 # TEACH: The parameter in a class means User class inherits everything from Base class which is from sqlalchemy
 class User(Base):
     __tablename__ = 'user'
@@ -35,13 +64,16 @@ class User(Base):
         """
         Quest gets rewarded to the user. The quest must 
         be active or force to be true for that to be possible.
+        Returns true if the user was rewarded or false if conditions
+        were not met.
         """
         quest = Quest.getByID(session, quest_id)
         if force == False:
             # This means if the quest is not active,
             # because the ORM returns an empty list
-            if quest.quest_acitve == []:
-                return "COULD NOT GIVE REWARD FOR QUEST ID: %s, QUEST IS NOT ACTIVE" % (quest_id)
+            if quest.active == []:
+                print("COULD NOT GIVE REWARD FOR QUEST ID: %s, QUEST IS NOT ACTIVE" % (quest_id))
+                return False
 
         
         self.xp = self.xp + quest.xp
@@ -52,11 +84,12 @@ class User(Base):
             userRank = UserRank(rank_id = questRank.id, user_id = self.id)
             session.add(userRank)
 
-        # Add the quest to completed database
+        # Add the quest to quest_user database
         userQuest = UserQuest(quest_id = quest.id, user_id = self.id)
         session.add(userQuest)
         session.commit()
-
+        return True
+        
 
     @staticmethod
     def getByID(session, id):
@@ -80,38 +113,14 @@ class UserPhoneNumber(Base):
     id = Column(Integer, primary_key=True)
     user_id = Column(None, ForeignKey(User.id))
     # Save the phone number as a string because we might need to add country prefixes
-    number = Column(Integer, nullable = False)
+    number = Column(String, nullable = False)
     country_prefix = Column(String, default = '+40')
+
+    
 
 
 class Quest(Base):
-    class Types:
-        BETIV = 'BETIV'
-        NORMAL = 'NORMAL'
-        DUBIOS = 'DUBIOS'
-        PARIOR = 'PARIOR'
-    
-    class Rarities:
-        # % CONSTATNS
-        COMUN = 100
-        EPIC = 60
-        LEGENDAR = 25
-        IMPOSIBIL = 5
 
-        @staticmethod
-        def getRandomRarity():
-            """
-                Returns a string with a random rarity based on the drop rate (%) 
-            """
-            r = random.randint(1,100)
-            if r <= Rarities.IMPOSIBIL:
-                return "IMPOSIBIL"
-            elif r <= Rarities.LEGENDAR:
-                return "LEGENDAR"
-            elif r <= Rarities.EPIC:
-                return "EPIC"
-            else:
-                return "COMUN"
 
     __tablename__ = 'quest'
     id = Column(Integer, primary_key=True)
@@ -120,7 +129,7 @@ class Quest(Base):
     rarity = Column(String, nullable = False)
     name = Column(String, nullable = False)
     task = Column(String, nullable = False)
-    interval = Column(Interval, nullable = False)
+    interval_days = Column(Integer,nullable = False)
     xp = Column(Integer, default = 0)
     sect_coins = Column(Integer, default = 0)
 
@@ -136,7 +145,28 @@ class Quest(Base):
         Returns an ORM where the Quest.id is matched
         """
         return session.query(Quest).filter(Quest.id == quest_id).first()
+    @staticmethod
+    def startRandom(session):
+        """
+        Starts a random quest from the database based on the % of the rarity
+        Returns an ORM with the ACTIVEQUEST started
+        """
+        rarity = Rarities.getRandomRarity()
+        # Select a random quest from the database based on the random % rarity
+        while True:
+            # Rpeat this process until you get an active/valid/not off quest
+            quest = session.query(Quest).filter(Quest.rarity == rarity).order_by(func.random()).first()
+            if quest.is_active == True:
+                break
 
+        activequest = QuestActive(time_stop = datetime.datetime.now() + datetime.timedelta(days = quest.interval_days),
+         quest = quest
+        )
+        print("Started random quest %s" % (quest.id))
+        session.add(activequest)
+        session.commit()
+
+        return activequest
     
 
 
@@ -151,6 +181,26 @@ class QuestActive(Base):
     #time = datetime.datetime.now() + datetime.timedelta(days = 1)
     time_stop = Column(DateTime, nullable = False)
 
+    @staticmethod
+    def updateActive():
+        """
+        Remove the quests that are over
+        """
+        s = session()
+        # THIS IS VALID -> session.query(QuestActive).filter(datetime.datetime.now() >= QuestActive.time_stop).delete()
+        # BUT I can't tell if it deleted anything or not, so for better debugging I will do it like this:
+        i = 0
+        activeQuests = s.query(QuestActive)
+        for activeQuest in activeQuests:
+            if datetime.datetime.now() >= activeQuest.time_stop:
+                i += 1
+                s.delete(activeQuest)
+                print("Removed from active list quest %s, added on %s/%s" %(activeQuest.quest_id,
+                activeQuest.time_start.month, activeQuest.time_start.day))
+                s.commit()
+        if i == 0:
+            print("No acitve quests needed to be removed")
+        s.close()
 
     def get(session):
         """
@@ -161,6 +211,7 @@ class QuestActive(Base):
          active.quest.ranks[0].rank
         """
         activeQuests = session.query(QuestActive)
+        session.commit()
         return activeQuests
 
 
@@ -189,6 +240,8 @@ class UserRank(Base):
  
 # Create all the tables in the database
 Base.metadata.create_all(engine)
-print("Created all tables succesfully")
 
+
+if __name__ == '__main__':
+    print("Created all tables succesfully")
 
