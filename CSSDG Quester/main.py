@@ -1,7 +1,7 @@
 import discord
 from discord import user
 from discord.ext import commands
-from db import session, User, Quest, QuestActive
+from db import session, User, Quest, QuestActive, Ideea
 
 # Start scheduler to check if the active quests are over and start new quests every 1day
 #note that there are many other schedulers available
@@ -9,8 +9,6 @@ from apscheduler.schedulers.background import BackgroundScheduler
 
 sched = BackgroundScheduler()
 
-
-client = discord.Client()
 bot = commands.Bot(command_prefix='!', description='Un bot special conceput pentru Sectantii CCSDG.')
 
 
@@ -190,26 +188,20 @@ async def quest(ctx):
         await ctx.send('Momentan nu exista questuri active')
         return
     for aq in activeQuests:
-        string_quest = ("\nQuest ID: %s" %(aq.quest_id) +
-            "\nZiua terminarii: %s/%s" % (aq.time_stop.month, aq.time_stop.day) +
-            "\nDurata timp: %s zile" % (aq.quest.interval_days) +
-            "\nTIP: %s" % (aq.quest.type) +
-            "\nRaritate: %s"% (aq.quest.rarity) +
-            "\nNume: %s" % (aq.quest.name) +
-            "\nObiectiv: %s" % (aq.quest.task) +
-            "\n----RECOMPENSE-----"
-            "\nXP: %s" % (aq.quest.xp) + 
-            "\nSect coins: %s" % (aq.quest.sect_coins)
-        )
-    
-        string_ranks = '\nRankuri: '
-        for rank in aq.quest.ranks:
-            string_ranks = string_ranks + rank.name + ', '
-        # Just print the string
-        # Don't print the last ','
-        string  = string_quest + string_ranks[:string_ranks.__len__() -2]
-        await ctx.send(string)
-    
+        questString = getQuestString(ctx,
+            aq.quest.ranks,
+            aq.quest_id,
+            aq.time_stop.month,
+            aq.time_stop.day,
+            aq.quest.interval_days,
+            aq.quest.type,
+            aq.quest.rarity,
+            aq.quest.name,
+            aq.quest.task,
+            aq.quest.xp,
+            aq.quest.sect_coins
+            )
+        await ctx.send(questString)
     s.close()
 
 
@@ -217,27 +209,79 @@ async def quest(ctx):
 async def incepe_rand(ctx):
     s = session()
     active = Quest.startRandom(s)
-    string_quest = ("\nQuest ID: %s" % (active.quest.id) 
-        + "\nZiua terminarii: %s/%s" % (active.time_stop.month, active.time_stop.day) 
-        + "\nDurata timp: %s zile" % (active.quest.interval_days) 
-        + "\nTIP: %s" % (active.quest.type) 
-        + "\nRaritate: %s"% (active.quest.rarity) 
-        + "\nNume: %s" % (active.quest.name) 
-        + "\nObiectiv: %s" % (active.quest.task) 
-        + "\n----RECOMPENSE-----" 
-        + "\nXP: %s" % (active.quest.xp)  
-        + "\nSect coins: %s" % (active.quest.sect_coins)
+    # Print
+    stringQuest = getQuestString(ctx,
+        active.quest.ranks,
+        active.quest.id,
+        active.time_stop.month,
+        active.time_stop.day,
+        active.quest.interval_days,
+        active.quest.type,
+        active.quest.rarity,
+        active.quest.name,
+        active.quest.task,
+        active.quest.xp,
+        active.quest.sect_coins    
     )
-    string_ranks = '\nRankuri: '
-    if active.quest.ranks != []:
-        for rank in active.quest.ranks:
-            string_ranks = string_ranks + rank.name + ', '
+    await ctx.send("Questul umrator a fost inceput, mult noroc coita :sunglasses:")
+    await ctx.send(stringQuest)
+
+def getQuestString(ctx, ranks, questId, stopMonth, stopDay, interval, type, rarity, name, task, xp, coins):
+    stringQuest = ("```css" # This starts the discord formating with 'css' styling
+        + "\n Quest #%s [%s] [%s]" % (questId, type, rarity)
+        # TODO: ADD datetime year
+        + "\n{Terminat:    %s/%s/2018}" % (stopDay, stopMonth)
+    )
+
+    # CHECK for plurals: 1 day or 2 days; 
+    if(interval > 1):
+        stringQuest = stringQuest + "\n{Timp:        %s zile}" % (interval)
     else:
-        string_ranks = ''
-    # Just print the string
-    # Don't print the last ','
-    string  = string_quest + string_ranks[:string_ranks.__len__() -2]
-    await ctx.send("URMATORUL QUEST A FOST INCEPUT: " + string)
+        stringQuest = stringQuest + "\n{Timp:        %s zi}" % (interval)
+
+    stringQuest = stringQuest + (
+        "\n{Nume: %s}" % (name)
+        + "\n{Obiectiv: %s}" % (task)
+        + "\n----RECOMPENSE-----"
+    )
+
+    # Don't print the row if it doesn't have any rewards/ranks
+    if xp > 0:
+        stringQuest = stringQuest + "\nXP: %s" % (xp)
+    if coins > 0:
+        stringQuest = stringQuest + "\nSect coins: %s" % (coins)
+        
+    # This is how you check if the ORM object is empty :|
+    if ranks != []:
+        stringQuest = stringQuest + "\nRankuri: "
+        for rank in ranks:
+            stringQuest = stringQuest + rank.name + ', '
+
+    # This line closes the discord formating, it's very important
+    stringQuest  = stringQuest[:len(stringQuest) - 2] + "\n```"
+    return stringQuest
+
+
+
+
+
+@bot.command()
+async def idee(ctx, text: str):
+    print(ctx.message.clean_content[6:])
+    s = session()
+    user = User.getByDiscordID(s, ctx.author.id)
+    ideea = Ideea(name = ctx.message.clean_content[6:], user = user)
+    s.add(ideea)
+    s.commit()
+    print(text)
+    await ctx.send("Ideea ta: \'%s\' \na fost inregistrata cu succes :D" % (ideea.name))
+    #TODO: hmmmmm, maybe change to admins
+    owner = bot.get_user(256853098914381835)
+    #'Utilizatorul: %s a adaugat o idee: \n\'%s\'' % (user.discord_server_name, idee.name)
+    #await client.send_message(owner, 'o sugi')
+    #await ctx.send_message(owner, 'o wtf')  
+    #await bot.send_message(owner, 'Hello')
+    #client.send_message()
 
     
 import secret
