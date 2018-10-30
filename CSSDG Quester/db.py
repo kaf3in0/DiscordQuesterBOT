@@ -1,10 +1,11 @@
-from sqlalchemy import Column, DateTime, String, Boolean, Integer, Interval, ForeignKey, func
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, relationship
-
 import datetime
 import random
+
+from sqlalchemy import (Boolean, Column, DateTime, ForeignKey, Integer,
+                        Interval, String, create_engine, func)
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import relationship, sessionmaker
+
 Base = declarative_base()
 
 engine = create_engine('sqlite:///DB/data.db')
@@ -59,7 +60,7 @@ class User(Base):
     phone_numbers = relationship('UserPhoneNumber', backref = 'user')
     quests = relationship('UserQuest', backref = 'user')
     ranks = relationship('UserRank', backref = 'user')
-
+    ideea = relationship('Ideea', backref= 'user')
     def giveReward(self, session, quest_id, force = False):
         """
         Quest gets rewarded to the user. The quest must 
@@ -105,7 +106,11 @@ class User(Base):
         """
         return session.query(User).filter(User.discord_id == discord_id).first()
 
-
+class Ideea(Base):
+    __tablename__ = 'ideea'
+    id = Column(Integer, primary_key = True)
+    user_id = Column(None, ForeignKey(User.id))
+    name = Column(String, nullable = False)
 
 # Used for whatsapp (No implementation yet)
 class UserPhoneNumber(Base):
@@ -184,23 +189,30 @@ class QuestActive(Base):
     @staticmethod
     def updateActive():
         """
+        Returns and array with all the removed quests if there are any
+        Returns false if it DIDN'T remove any quest
         Remove the quests that are over
         """
         s = session()
         # THIS IS VALID -> session.query(QuestActive).filter(datetime.datetime.now() >= QuestActive.time_stop).delete()
         # BUT I can't tell if it deleted anything or not, so for better debugging I will do it like this:
         i = 0
+        deletedQuests = []
         activeQuests = s.query(QuestActive)
         for activeQuest in activeQuests:
             if datetime.datetime.now() >= activeQuest.time_stop:
                 i += 1
+                deletedQuests.append(activeQuest)
                 s.delete(activeQuest)
                 print("Removed from active list quest %s, added on %s/%s" %(activeQuest.quest_id,
-                activeQuest.time_start.month, activeQuest.time_start.day))
+                activeQuest.time_start.day, activeQuest.time_start.month))
                 s.commit()
         if i == 0:
             print("No acitve quests needed to be removed")
+            s.close()
+            return False
         s.close()
+        return deletedQuests
 
     def get(session):
         """
@@ -234,7 +246,6 @@ class UserRank(Base):
     id = Column(Integer, primary_key=True)
     user_id = Column(None, ForeignKey(User.id))
     rank_id = Column(None, ForeignKey(QuestRank.id))
-
     quest_rank = relationship('QuestRank', backref = 'user_rank')
 
  
@@ -244,4 +255,3 @@ Base.metadata.create_all(engine)
 
 if __name__ == '__main__':
     print("Created all tables succesfully")
-

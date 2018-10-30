@@ -2,14 +2,16 @@ import discord
 from discord import user
 from discord.ext import commands
 from db import session, User, Quest, QuestActive, Ideea
-
+from discord import Embed
+import asyncio
 # Start scheduler to check if the active quests are over and start new quests every 1day
 #note that there are many other schedulers available
-from apscheduler.schedulers.background import BackgroundScheduler
+#from apscheduler.schedulers.background import BackgroundScheduler
 
-sched = BackgroundScheduler()
+#sched = BackgroundScheduler()
 
 bot = commands.Bot(command_prefix='!', description='Un bot special conceput pentru Sectantii CCSDG.')
+
 
 
 @bot.event
@@ -21,41 +23,6 @@ async def on_ready():
     print('------')
     updateUsers()   
     QuestActive.updateActive()
-    initSchedulers()
-
-def initSchedulers():
-    # seconds can be replaced with minutes, hours, or days
-    # Check for user updates every 1 hour
-    sched.add_job(updateUsers, 'interval', minutes=15)
-    sched.add_job(QuestActive.updateActive, 'interval', minutes=15)
-    #sched.add_job(startRandomQuest, 'interval', seconds=15)
-    # TODO: Check for active quests updates every 1 hour
-    sched.start()
-    
-
-# TODO: Finish this
-def startRandomQuest():
-    s = session()
-    quest = Quest.startRandom(s)
-    string_quest = ("\nQuest ID: %s" % (quest.id) +
-            "\nZiua terminarii: %s/%s" % (quest.active.time_stop.month, quest.active.time_stop.day) +
-            "\nDurata timp: %s zile" % (quest.interval_days) +
-            "\nTIP: %s" % (quest.type) +
-            "\nRaritate: %s"% (quest.rarity) +
-            "\nNume: %s" % (quest.name) +
-            "\nObiectiv: %s" % (quest.task) +
-            "\n----RECOMPENSE-----"
-            "\nXP: %s" % (quest.xp) + 
-            "\nSect coins: %s" % (quest.sect_coins)
-        )
-    string_ranks = '\nRankuri: '
-    for rank in quest.ranks:
-        string_ranks = string_ranks + rank.rank + ', '
-    # Just print the string
-    # Don't print the last ','
-    string = string_quest + string_ranks[:string_ranks.__len__() -2]
-    s.close()
-
 
 
 # NOTE: This functions shoul stay in here even if it;s not a bot comand because it's heavyli dependent on discord.py   
@@ -177,32 +144,106 @@ async def curve(ctx):
     await ctx.send("Ah, vrei sa futi si tu ceva no?:ok_hand::point_left:")
     await ctx.send("Ia d-aici sectantul meu, prietenii la nevoie se cunosc :heart:")
     await ctx.send("https://www.publi24.ro/anunturi/matrimoniale/")
-    
 
 
+@bot.command()
+async def embed(ctx):
+    embed = discord.Embed(title="title ~~(did you know you can have markdown here too?)~~", colour=discord.Colour(0x7c941e), url="https://discordapp.com", description="this supports [named links](https://discordapp.com) on top of the previously shown subset of markdown. ```\nyes, even code blocks```")
+
+    embed.set_image(url="https://cdn.discordapp.com/embed/avatars/0.png")
+    embed.set_thumbnail(url="https://cdn.discordapp.com/embed/avatars/0.png")
+    embed.set_author(name="author name", url="https://discordapp.com", icon_url="https://cdn.discordapp.com/embed/avatars/0.png")
+    embed.set_footer(text="footer text", icon_url="https://cdn.discordapp.com/embed/avatars/0.png")
+
+    embed.add_field(name="🤔", value="some of these properties have certain limits...")
+    embed.add_field(name="😱", value="try exceeding some of them!")
+    embed.add_field(name="🙄", value="an informative error should show up, and this view will remain as-is until all issues are fixed")
+    embed.add_field(name="<:thonkang:219069250692841473>", value="these last two", inline=True)
+    embed.add_field(name="<:thonkang:219069250692841473>", value="are inline fields", inline=True)
+
+    await ctx.send(content="this `supports` __a__ **subset** *of* ~~markdown~~ 😃 ```js\nfunction foo(bar) {\n  console.log(bar);\n}\n\nfoo(1);```", embed=embed)
+
+def getQuestEmbed(questString):
+    embed = discord.Embed(title = 'Questurile sectantilor sa moara toti dusmanii',
+    colour=discord.Colour(0xbf2ab0))
+    embed.add_field(name='Ia cu paine:' ,value=questString)
+    #title= 'Questurile sectantilor sa moara toti dusmanii')
+
+    return embed
 @bot.command()
 async def quest(ctx):
     s = session()
     activeQuests = QuestActive.get(s)
+    aq = activeQuests
     if activeQuests.first() == None:
         await ctx.send('Momentan nu exista questuri active')
         return
-    for aq in activeQuests:
-        questString = getQuestString(ctx,
-            aq.quest.ranks,
-            aq.quest_id,
-            aq.time_stop.month,
-            aq.time_stop.day,
-            aq.quest.interval_days,
-            aq.quest.type,
-            aq.quest.rarity,
-            aq.quest.name,
-            aq.quest.task,
-            aq.quest.xp,
-            aq.quest.sect_coins
-            )
-        await ctx.send(questString)
-    s.close()
+    index = 0
+    questString = getQuestString(
+        aq[index].quest.ranks,
+        aq[index].quest_id,
+        aq[index].time_stop.month,
+        aq[index].time_stop.day,
+        aq[index].quest.interval_days,
+        aq[index].quest.type,
+        aq[index].quest.rarity,
+        aq[index].quest.name,
+        aq[index].quest.task,
+        aq[index].quest.xp,
+        aq[index].quest.sect_coins
+        )
+    embed = getQuestEmbed(questString)
+    msg = await ctx.send(embed=embed)
+    await msg.add_reaction('◀')
+    await msg.add_reaction('▶')
+    def check(reaction, user):
+        return user == ctx.author and (str(reaction.emoji) == '◀' or str(reaction.emoji) == '▶')
+    try:
+        while True:
+            try:
+                reaction, user = await bot.wait_for('reaction_add', timeout=60.0, check=check)
+            except asyncio.TimeoutError:
+                await ctx.send('👎')
+            else:
+                if reaction.emoji == '▶' and index < 4:
+                    index+=1
+                    questString = getQuestString(
+                    aq[index].quest.ranks,
+                    aq[index].quest_id,
+                    aq[index].time_stop.month,
+                    aq[index].time_stop.day,
+                    aq[index].quest.interval_days,
+                    aq[index].quest.type,
+                    aq[index].quest.rarity,
+                    aq[index].quest.name,
+                    aq[index].quest.task,
+                    aq[index].quest.xp,
+                    aq[index].quest.sect_coins
+                    )
+                    embed = getQuestEmbed(questString)
+                    await msg.edit(embed=embed)
+                    #msg = await ctx.send(embed=embed)
+                elif reaction.emoji == '◀' and index > 0:
+                    index-=1
+                    questString = getQuestString(
+                    aq[index].quest.ranks,
+                    aq[index].quest_id,
+                    aq[index].time_stop.month,
+                    aq[index].time_stop.day,
+                    aq[index].quest.interval_days,
+                    aq[index].quest.type,
+                    aq[index].quest.rarity,
+                    aq[index].quest.name,
+                    aq[index].quest.task,
+                    aq[index].quest.xp,
+                    aq[index].quest.sect_coins
+                    )
+                    embed = getQuestEmbed(questString)
+                    await msg.edit(embed=embed)
+    except:
+        await msg.delete()
+        s.close()
+        return
 
 
 @bot.command()
@@ -210,7 +251,7 @@ async def incepe_rand(ctx):
     s = session()
     active = Quest.startRandom(s)
     # Print
-    stringQuest = getQuestString(ctx,
+    stringQuest = getQuestString(
         active.quest.ranks,
         active.quest.id,
         active.time_stop.month,
@@ -223,10 +264,10 @@ async def incepe_rand(ctx):
         active.quest.xp,
         active.quest.sect_coins    
     )
-    await ctx.send("Questul umrator a fost inceput, mult noroc coita :sunglasses:")
+    await ctx.send("Questul urmator a fost inceput, mult noroc coita :sunglasses:")
     await ctx.send(stringQuest)
 
-def getQuestString(ctx, ranks, questId, stopMonth, stopDay, interval, type, rarity, name, task, xp, coins):
+def getQuestString(ranks, questId, stopMonth, stopDay, interval, type, rarity, name, task, xp, coins):
     stringQuest = ("```css" # This starts the discord formating with 'css' styling
         + "\n Quest #%s [%s] [%s]" % (questId, type, rarity)
         # TODO: ADD datetime year
@@ -256,18 +297,16 @@ def getQuestString(ctx, ranks, questId, stopMonth, stopDay, interval, type, rari
         stringQuest = stringQuest + "\nRankuri: "
         for rank in ranks:
             stringQuest = stringQuest + rank.name + ', '
-
+        stringQuest  = stringQuest[:len(stringQuest) - 2]
+    
     # This line closes the discord formating, it's very important
-    stringQuest  = stringQuest[:len(stringQuest) - 2] + "\n```"
+    stringQuest = stringQuest + "\n```"
+
     return stringQuest
-
-
-
 
 
 @bot.command()
 async def idee(ctx, text: str):
-    print(ctx.message.clean_content[6:])
     s = session()
     user = User.getByDiscordID(s, ctx.author.id)
     ideea = Ideea(name = ctx.message.clean_content[6:], user = user)
@@ -277,12 +316,72 @@ async def idee(ctx, text: str):
     await ctx.send("Ideea ta: \'%s\' \na fost inregistrata cu succes :D" % (ideea.name))
     #TODO: hmmmmm, maybe change to admins
     owner = bot.get_user(256853098914381835)
-    #'Utilizatorul: %s a adaugat o idee: \n\'%s\'' % (user.discord_server_name, idee.name)
-    #await client.send_message(owner, 'o sugi')
-    #await ctx.send_message(owner, 'o wtf')  
-    #await bot.send_message(owner, 'Hello')
-    #client.send_message()
-
+    await owner.send(f"**{ctx.author.name}** a avut urmatoarea idee: \n*{ideea.name}*")
     
+
+
+async def updateActiveQuests():
+    await bot.wait_until_ready()
+    channel = bot.get_channel(269485465801981953)
+    while not bot.is_closed():
+        deletedQuests = QuestActive.updateActive()
+        s = session()
+        if deletedQuests != False:
+            await channel.send("Urmatoarele questuri s-au terminat")
+            for active in deletedQuests:
+                stringQuest = getQuestString(
+                active.quest.ranks,
+                active.quest.id,
+                active.time_stop.month,
+                active.time_stop.day,
+                active.quest.interval_days,
+                active.quest.type,
+                active.quest.rarity,
+                active.quest.name,
+                active.quest.task,
+                active.quest.xp,
+                active.quest.sect_coins    
+                )
+                await channel.send(stringQuest)
+            s.close()
+        await asyncio.sleep(60) # task should run every 24hours
+
+
+
+async def startRandomQuest():
+    await bot.wait_until_ready()
+    counter = 0
+    channel = bot.get_channel(269485465801981953)
+    while not bot.is_closed():
+        if counter > 0:
+            s = session()
+            active = Quest.startRandom(s)
+            # Print
+            stringQuest = getQuestString(
+                active.quest.ranks,
+                active.quest.id,
+                active.time_stop.month,
+                active.time_stop.day,
+                active.quest.interval_days,
+                active.quest.type,
+                active.quest.rarity,
+                active.quest.name,
+                active.quest.task,
+                active.quest.xp,
+                active.quest.sect_coins    
+            )
+            await channel.send("Questul umrator a fost inceput, mult noroc coita :sunglasses:")
+            await channel.send(stringQuest)
+        counter += 1
+        await asyncio.sleep(24*60*60) # task should run every 24hours
+
+ 
+
+
+
 import secret
-bot.run(secret.TOKEN)
+#client.loop.create_task(my_background_task())
+#client.run(secret.TOKEN)
+bot.loop.create_task(updateActiveQuests())
+bot.loop.create_task(startRandomQuest())
+bot.run(secret.TOKEN)   
