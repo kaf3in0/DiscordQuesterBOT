@@ -10,23 +10,26 @@ Base = declarative_base()
 
 engine = create_engine('sqlite:///DB/data.db')
  
-# Construct a sessionmaker object, use this object to make sessions across the aplication
+# Construct a sessionmaker object, use this object to make sessions across the aplication by importing it
 session = sessionmaker(bind = engine)
 
+# TODO: Constants shouldn't be in a class
+# TODO: Make it so you can change and store those in the DataBase for user customization
 class Types:
     BETIV = 'BETIV'
     NORMAL = 'NORMAL'
     DUBIOS = 'DUBIOS'
     PARIOR = 'PARIOR'
 
-
 class Rarities:
     # % CONSTATNS
+    # TODO: Make it so you can change and store those in the DataBase for user customization
     COMUN = 100
     EPIC = 60
     LEGENDAR = 25
     IMPOSIBIL = 5
 
+    # WTF should this be ?
     def getRandomRarity():
         """
         Returns a string with a random rarity based on the drop rate (%) 
@@ -61,6 +64,22 @@ class User(Base):
     quests = relationship('UserQuest', backref = 'user')
     ranks = relationship('UserRank', backref = 'user')
     ideea = relationship('Ideea', backref= 'user')
+
+    def getCompletedQuests(self, session):
+        """
+        Returns a list with id's of all the completed quests by the user or None if there aren't any
+        """
+        userQuests = session.query(UserQuest).filter(UserQuest.user_id==self.id)
+        # Return None if there are no completed quests by the user
+        if userQuests.first() == None:
+            return None
+        
+        # Save only the ids of the completed quests
+        questids = []
+        for userQuest in userQuests:
+            questids.append(userQuest.quest_id)
+        return questids
+
     def giveReward(self, session, quest_id, force = False):
         """
         Quest gets rewarded to the user. The quest must 
@@ -150,18 +169,22 @@ class Quest(Base):
         Returns an ORM where the Quest.id is matched
         """
         return session.query(Quest).filter(Quest.id == quest_id).first()
+
+
     @staticmethod
     def startRandom(session):
         """
-        Starts a random quest from the database based on the % of the rarity
-        Returns an ORM with the ACTIVEQUEST started
+        Returns the id of the started quest
         """
         rarity = Rarities.getRandomRarity()
         # Select a random quest from the database based on the random % rarity
+        quest = None
         while True:
-            # Rpeat this process until you get an active/valid/not off quest
+            # Rpeat this process until you get a not already active/valid/enabled quest
             quest = session.query(Quest).filter(Quest.rarity == rarity).order_by(func.random()).first()
-            if quest.is_active == True:
+            #TODO: isQuestActive()
+            
+            if quest.is_active == True and quest.isActive(session) == False:
                 break
 
         activequest = QuestActive(time_stop = datetime.datetime.now() + datetime.timedelta(days = quest.interval_days),
@@ -170,9 +193,13 @@ class Quest(Base):
         print("Started random quest %s" % (quest.id))
         session.add(activequest)
         session.commit()
-
-        return activequest
+        return quest.id
     
+    def isActive(self, session):
+        if self.active == []:
+            return False
+        else:
+            return True
 
 
 class QuestActive(Base):
@@ -187,44 +214,47 @@ class QuestActive(Base):
     time_stop = Column(DateTime, nullable = False)
 
     @staticmethod
-    def updateActive():
+    def updateActive(session):
         """
-        Returns and array with all the removed quests if there are any
-        Returns false if it DIDN'T remove any quest
-        Remove the quests that are over
+        Returns a list with id's of the deleted quests
         """
-        s = session()
         # THIS IS VALID -> session.query(QuestActive).filter(datetime.datetime.now() >= QuestActive.time_stop).delete()
         # BUT I can't tell if it deleted anything or not, so for better debugging I will do it like this:
         i = 0
-        deletedQuests = []
-        activeQuests = s.query(QuestActive)
+        deletedQuestIds = []
+        activeQuests = session.query(QuestActive)
         for activeQuest in activeQuests:
             if datetime.datetime.now() >= activeQuest.time_stop:
                 i += 1
-                deletedQuests.append(activeQuest)
-                s.delete(activeQuest)
+                deletedQuestIds.append(activeQuest.quest_id)
+                session.delete(activeQuest)
                 print("Removed from active list quest %s, added on %s/%s" %(activeQuest.quest_id,
                 activeQuest.time_start.day, activeQuest.time_start.month))
-                s.commit()
-        if i == 0:
-            print("No acitve quests needed to be removed")
-            s.close()
-            return False
-        s.close()
-        return deletedQuests
+                session.commit()
 
+        return deletedQuestIds
+
+
+    @staticmethod
     def get(session):
         """
-         Returns an ORM list (lsit objects) with all the active_q quests, 
-         acces to the quest itself is made by using backrefs:
-         active_q.quest.name/id/type/rarity
-         similarly, acces to ranks is done like:
-         active.quest.ranks[0].rank
+        Returns a list with id's of all the active quests
         """
+        # Get all the active quests
         activeQuests = session.query(QuestActive)
         session.commit()
-        return activeQuests
+        ids = []
+        # Save only the quest ids
+        for activeQuest in activeQuests:
+            ids.append(activeQuest.quest_id)
+        return ids
+
+    @staticmethod
+    def getById(session, quest_id):
+        """
+        Returns the ORM of quest_active
+        """
+        return session.query(QuestActive).filter(QuestActive.quest_id == quest_id).first()
 
 
 class UserQuest(Base):
@@ -233,7 +263,9 @@ class UserQuest(Base):
     quest_id = Column(None, ForeignKey(Quest.id))
     user_id = Column(None, ForeignKey(User.id))
     date = Column(DateTime, default = func.now())
-    # TODO: Add the time it took to complete the quest, from the start to the time the user made it
+
+
+
 
 class QuestRank(Base):
     __tablename__ = 'quest_rank'
@@ -254,4 +286,7 @@ Base.metadata.create_all(engine)
 
 
 if __name__ == '__main__':
-    print("Created all tables succesfully")
+    s = session()
+    user = User.getByID(s,35)
+    cmpquests = user.getCompletedQuests(s)
+    print(cmpquests)

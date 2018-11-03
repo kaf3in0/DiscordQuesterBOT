@@ -251,18 +251,10 @@ async def quest(ctx):
     def check(reaction, user):
         return user == ctx.author and (str(reaction.emoji) == '◀' or str(reaction.emoji) == '▶' or str(reaction.emoji) == '✅')
     
-
+    
     while True:
-        # Check to see if you close this msg
-        messages = await ctx.history(limit=25, after=msg).flatten()
-        for message in messages:
-            if message.content == '!quest':
-                await message.delete()
-                await msg.delete()
-                return
-
         try:
-            reaction, user = await bot.wait_for('reaction_add', timeout=10.0, check=check)
+            reaction, user = await bot.wait_for('reaction_add', timeout=5.0, check=check)
         except:
             print('wewe')
         else:
@@ -287,7 +279,7 @@ async def quest(ctx):
                 s.close()
         # Remove
         try:
-            reaction, user = await bot.wait_for('reaction_remove', timeout=10.0, check=check)
+            reaction, user = await bot.wait_for('reaction_remove', timeout=5.0, check=check)
         except:
             print('muie?')
         else:
@@ -425,9 +417,54 @@ async def reactie(ctx):
                     if role.name == key:
                         await member.add_roles(role)
 
- 
 
+@bot.command()
+async def react(ctx):
+    isOld = False
+    msg = await ctx.send('Test')
+    await msg.add_reaction('◀')
+    await msg.add_reaction('▶')
+    def check(reaction, user):
+        return user == ctx.author and (str(reaction.emoji) == '◀' or str(reaction.emoji) == '▶')
+    
+    @bot.event
+    async def on_message(message):
+        if message.content == '!react':
+            isOld = True
+            await msg.delete()
+    if isOld == True:
+        return
 
+    @bot.event
+    async def on_reaction_add(reaction, member):
+        if reaction.emoji == '▶':
+            print('yes1')
+        elif reaction.emoji == '◀':
+            print('yes2')
+    """ 
+    while True: # How do I make this stop when this function is called again ?
+        try:
+            reaction, member = await bot.wait_for('reaction_add', check=check)
+        except:
+            pass
+        else:
+            if reaction.emoji == '▶':
+                # Do stuff
+                print('yes1')
+            elif reaction.emoji == '◀':
+                # Do other stuff
+                print('yes2')
+    """
+    """
+        def isOld(message):
+            return message == '!react'
+        try:
+            newMsg = await bot.wait_for('on_message',timeout=10, check= isOld)
+        except:
+            pass
+        else:
+            await msg.edit(content='hey')
+    """
 
 import secret
 bot.loop.create_task(updateActiveQuests())
